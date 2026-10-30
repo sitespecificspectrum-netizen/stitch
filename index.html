@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실 기록</title>
+<meta name="theme-color" content="#c74161">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="실 기록">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── 탭 1: 작품 목록 ── -->
+<section id="list-view" class="view">
+  <header class="bar">
+    <h1>작품</h1>
+    <div class="bar-actions">
+      <button class="icon-btn" id="menu-btn" aria-label="백업">⋯</button>
+      <button class="icon-btn primary" id="new-btn" aria-label="새 작품">＋</button>
+    </div>
+  </header>
+  <input class="search" id="list-search" type="search" placeholder="제목 또는 실 번호 검색">
+  <ul id="project-list" class="cards"></ul>
+  <div id="empty" class="empty" hidden>
+    <div class="empty-icon">▦</div>
+    <strong>작품이 없어요</strong>
+    <p>＋ 버튼을 눌러 픽셀 이미지로 도안을 만들거나<br>사용한 DMC 실을 기록해 보세요.</p>
+  </div>
+</section>
+
+<!-- ── 탭 2: 보유 실 ── -->
+<section id="stash-view" class="view" hidden>
+  <header class="bar">
+    <h1>보유 실</h1>
+    <div class="bar-actions">
+      <button class="icon-btn primary" id="stash-add" aria-label="보유 실 추가">＋</button>
+    </div>
+  </header>
+  <p class="sub" id="stash-summary"></p>
+  <input class="search" id="stash-search" type="search" placeholder="번호 또는 색 이름">
+  <ul id="stash-list" class="group"></ul>
+  <div id="stash-empty" class="empty" hidden>
+    <div class="empty-icon">🧵</div>
+    <strong>보유 실이 없어요</strong>
+    <p>＋ 버튼으로 가지고 있는 실을 골라 주세요.<br>도안을 만들 때 이 실을 먼저 추천해요.</p>
+  </div>
+</section>
+
+<!-- ── 탭 3: 장보기 ── -->
+<section id="shop-view" class="view" hidden>
+  <header class="bar">
+    <h1>장보기</h1>
+    <div class="bar-actions">
+      <button class="icon-btn" id="shop-share" aria-label="목록 공유">⇪</button>
+    </div>
+  </header>
+  <p class="sub">진행 중인 작품에 필요한데 보유 실에 없는 실이에요. 사고 나서 ‘샀어요’를 누르면 보유 실로 옮겨져요.</p>
+  <ul id="shop-list" class="group"></ul>
+  <div id="shop-empty" class="empty" hidden>
+    <div class="empty-icon">✓</div>
+    <strong>살 실이 없어요</strong>
+    <p>지금 작품에 필요한 실은 모두 가지고 있어요.</p>
+  </div>
+</section>
+
+<!-- ── 작품 상세 ── -->
+<section id="project-view" class="view" hidden>
+  <header class="bar">
+    <button class="text-btn" id="back-btn">‹ 작품</button>
+    <h2 id="pv-title"></h2>
+    <button class="text-btn" id="edit-btn">편집</button>
+  </header>
+  <div class="panel" id="pv-progress"></div>
+
+  <div id="pv-pattern">
+    <div class="toolbar">
+      <div class="seg" role="tablist">
+        <button id="mode-view" class="on">보기</button>
+        <button id="mode-stitch">수놓기</button>
+      </div>
+      <div class="zoom">
+        <button id="zoom-out" aria-label="축소">−</button>
+        <button id="zoom-in" aria-label="확대">＋</button>
+      </div>
+    </div>
+    <p class="hint" id="mode-hint">칸을 누르면 같은 색만 강조해서 보여줘요.</p>
+    <div class="canvas-wrap" id="canvas-wrap"><canvas id="pattern"></canvas></div>
+  </div>
+
+  <div class="label-row">
+    <span class="label">실 목록</span>
+    <button class="text-btn small" id="rematch-btn">보유 실 기준으로 다시 추천</button>
+  </div>
+  <ul id="legend" class="group"></ul>
+
+  <div class="label">진행 기록</div>
+  <div class="panel" id="pv-log"></div>
+</section>
+
+<!-- ── 새 작품 ── -->
+<section id="new-view" class="view" hidden>
+  <header class="bar">
+    <button class="text-btn" id="new-cancel">취소</button>
+    <h2>새 작품</h2>
+    <button class="text-btn strong" id="new-create" disabled>만들기</button>
+  </header>
+  <label class="label" for="new-title">제목</label>
+  <input class="field" id="new-title" placeholder="작품 이름" autocomplete="off">
+
+  <div class="choice" id="new-choice">
+    <button class="big-btn" id="pick-image">
+      <span class="big-icon">▦</span>
+      <b>픽셀 이미지로 도안 만들기</b>
+      <small>이미지를 고르면 도안과 추천 실을 만들어요</small>
+    </button>
+    <button class="big-btn" id="manual-btn">
+      <span class="big-icon">🧵</span>
+      <b>사용한 실만 기록하기</b>
+      <small>도안 없이 실 번호만 저장해요</small>
+    </button>
+    <input type="file" id="image-file" accept="image/*" hidden>
+  </div>
+
+  <div id="import-setup" hidden>
+    <div class="canvas-wrap preview"><canvas id="preview"></canvas></div>
+    <p class="sub" id="import-info"></p>
+    <label class="label" for="cols-input">가로 칸 수</label>
+    <div class="inline">
+      <input class="field" id="cols-input" type="number" inputmode="numeric" min="4" max="300">
+      <button class="wide-btn inline-btn" id="cols-auto">자동</button>
+    </div>
+    <p class="hint">이미지를 키워서 저장했다면 자동으로 원래 칸 수를 찾아요. 다르면 직접 고쳐 주세요.</p>
+    <label class="label" for="match-mode">실 추천 방식</label>
+    <select class="field" id="match-mode">
+      <option value="owned">보유 실을 최대한 사용</option>
+      <option value="exact">가장 비슷한 색 (없으면 장보기에 추가)</option>
+    </select>
+    <label class="label" for="fabric-input">원단</label>
+    <select class="field" id="fabric-input">
+      <option value="11">11칸 (아이다 11)</option>
+      <option value="14" selected>14칸 (아이다 14)</option>
+      <option value="16">16칸 (아이다 16)</option>
+      <option value="18">18칸 (아이다 18)</option>
+    </select>
+    <button class="wide-btn" id="pick-again">다른 이미지 고르기</button>
+  </div>
+</section>
+
+<!-- ── 작품 편집 ── -->
+<section id="edit-view" class="view" hidden>
+  <header class="bar">
+    <button class="text-btn" id="cancel-btn">취소</button>
+    <h2>작품 편집</h2>
+    <button class="text-btn strong" id="save-btn">저장</button>
+  </header>
+  <label class="label" for="title-input">제목</label>
+  <input class="field" id="title-input" placeholder="작품 이름" autocomplete="off">
+
+  <div id="manual-fields">
+    <label class="label" for="status-input">진행 상태</label>
+    <select class="field" id="status-input">
+      <option>준비</option><option>진행 중</option><option>완성</option>
+    </select>
+    <div class="label">사용한 실 (<span id="count">0</span>)</div>
+    <ul id="thread-list" class="group"></ul>
+    <button class="add-btn" id="add-thread-btn">＋ 실 추가</button>
+  </div>
+
+  <label class="label" for="fabric-edit">원단</label>
+  <select class="field" id="fabric-edit">
+    <option value="11">11칸 (아이다 11)</option>
+    <option value="14">14칸 (아이다 14)</option>
+    <option value="16">16칸 (아이다 16)</option>
+    <option value="18">18칸 (아이다 18)</option>
+  </select>
+
+  <label class="label" for="note-input">메모</label>
+  <textarea class="field" id="note-input" rows="3" placeholder="도안, 원단 등"></textarea>
+
+  <div class="edit-footer">
+    <button class="wide-btn" id="share-btn">텍스트로 공유 / 복사</button>
+    <button class="wide-btn danger" id="delete-btn">작품 삭제</button>
+  </div>
+</section>
+
+<!-- ── 실 선택 ── -->
+<section id="picker-view" class="view" hidden>
+  <header class="bar">
+    <button class="text-btn" id="picker-cancel">취소</button>
+    <h2 id="picker-title">DMC 실 선택</h2>
+    <button class="text-btn strong" id="picker-done">완료</button>
+  </header>
+  <div id="picker-target" class="panel compare" hidden></div>
+  <input class="search" id="picker-search" type="search" placeholder="번호 또는 색 이름 (예: 310, blue)">
+  <label class="check"><input type="checkbox" id="picker-owned"> 보유 실만 보기</label>
+  <button class="add-btn" id="custom-add" hidden></button>
+  <div id="grid" class="grid"></div>
+</section>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="list-view" class="on"><span>▦</span>작품</button>
+  <button data-tab="stash-view"><span>🧵</span>보유 실</button>
+  <button data-tab="shop-view"><span>🛒</span>장보기<i class="badge" id="shop-badge" hidden></i></button>
+</nav>
+
+<!-- 백업 메뉴 -->
+<dialog id="menu">
+  <h3>백업</h3>
+  <p>작품과 보유 실은 이 기기의 Safari에 저장돼요. 가끔 백업 파일을 저장해 두세요.</p>
+  <button class="wide-btn" id="export-btn">백업 파일 저장</button>
+  <button class="wide-btn" id="import-btn">백업 파일 불러오기</button>
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
+  <button class="wide-btn" id="menu-close">닫기</button>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="dmc.js"></script>
+<script src="color.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
