@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 앱 파일을 캐시한다. 파일을 고치면 VERSION을 올린다.
-const VERSION = 'stitch-v2';
+const VERSION = 'stitch-v3';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'dmc.js', 'color.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

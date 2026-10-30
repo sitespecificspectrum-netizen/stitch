@@ -74,9 +74,10 @@
     <h2 id="pv-title"></h2>
     <button class="text-btn" id="edit-btn">편집</button>
   </header>
-  <div class="panel" id="pv-progress"></div>
+  <div class="pv-layout">
+  <div class="panel pv-progress" id="pv-progress"></div>
 
-  <div id="pv-pattern">
+  <div id="pv-pattern" class="pv-pattern">
     <div class="toolbar">
       <div class="seg" role="tablist">
         <button id="mode-view" class="on">보기</button>
@@ -91,14 +92,19 @@
     <div class="canvas-wrap" id="canvas-wrap"><canvas id="pattern"></canvas></div>
   </div>
 
-  <div class="label-row">
-    <span class="label">실 목록</span>
-    <button class="text-btn small" id="rematch-btn">보유 실 기준으로 다시 추천</button>
+  <div class="pv-legend">
+    <div class="label-row">
+      <span class="label">실 목록</span>
+      <button class="text-btn small" id="rematch-btn">보유 실 기준으로 다시 추천</button>
+    </div>
+    <ul id="legend" class="group"></ul>
   </div>
-  <ul id="legend" class="group"></ul>
 
-  <div class="label">진행 기록</div>
-  <div class="panel" id="pv-log"></div>
+  <div class="pv-log">
+    <div class="label">진행 기록</div>
+    <div class="panel" id="pv-log"></div>
+  </div>
+  </div>
 </section>
 
 <!-- ── 새 작품 ── -->

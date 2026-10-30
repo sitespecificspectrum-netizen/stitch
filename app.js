@@ -322,7 +322,7 @@ function openProject(id) {
   current = projects.find((p) => p.id === id);
   if (!current) return;
   hydrate(current);
-  pv = { mode: 'view', zoom: 0, highlight: null };
+  pv = { mode: 'view', zoom: 0, autoZoom: true, highlight: null };
   show('project-view'); // 먼저 보여야 화면 너비에 맞춰 도안 크기를 정할 수 있다
   renderProject();
 }
@@ -332,6 +332,7 @@ function renderProject() {
   $('pv-title').textContent = p.title;
   $('pv-pattern').hidden = !p.pattern;
   $('rematch-btn').hidden = !p.pattern;
+  document.querySelector('.pv-layout').classList.toggle('no-pattern', !p.pattern);
   renderProgress();
   renderLegend();
   renderLog();
@@ -459,17 +460,26 @@ function renderLog() {
 }
 
 // ── 도안 그리기 ──
+const isWide = () => window.matchMedia('(min-width: 768px)').matches;
+
+/** 화면에 도안 전체가 들어오는 칸 크기. 넓은 화면은 높이까지 맞춘다 */
 function fitZoom() {
   const wrap = $('canvas-wrap');
-  const { w } = current.pattern;
-  return Math.max(3, Math.min(32, Math.floor((wrap.clientWidth - 2) / w)));
+  const { w, h } = current.pattern;
+  let cs = (wrap.clientWidth - 2) / w;
+  if (isWide()) {
+    // 스크롤 위치와 상관없이, 맨 위로 올렸을 때 도안이 들어갈 높이
+    const top = window.matchMedia('(min-width: 1000px)').matches ? 190 : wrap.getBoundingClientRect().top + window.scrollY;
+    cs = Math.min(cs, (window.innerHeight - top - 32) / h);
+  }
+  return Math.max(3, Math.min(40, Math.floor(cs)));
 }
 
 function drawPattern() {
   const p = current;
   if (!p?.pattern) return;
   const { w, h } = p.pattern;
-  if (!pv.zoom) pv.zoom = fitZoom();
+  if (pv.autoZoom) pv.zoom = fitZoom();
   const cs = pv.zoom;
   // 캔버스가 너무 크면 Safari가 그리지 못하므로 해상도를 줄인다
   const dpr = Math.min(window.devicePixelRatio || 1, Math.sqrt(16e6 / (w * h * cs * cs)));
@@ -729,7 +739,7 @@ function buildPending() {
 
   // 미리보기: 추천 실 색으로
   const cv = $('preview');
-  const scale = Math.max(1, Math.floor(Math.min(320, cv.parentElement.clientWidth - 2) / pat.w));
+  const scale = Math.max(1, Math.floor(Math.min(isWide() ? 500 : 320, cv.parentElement.clientWidth - 18) / Math.max(pat.w, pat.h)));
   cv.width = pat.w * scale; cv.height = pat.h * scale;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, cv.width, cv.height);
@@ -954,8 +964,8 @@ $('back-btn').onclick = () => { current = null; switchTab('list-view'); };
 $('edit-btn').onclick = openEditor;
 $('mode-view').onclick = () => setMode('view');
 $('mode-stitch').onclick = () => { pv.highlight = null; setMode('stitch'); renderLegend(); drawPattern(); };
-$('zoom-in').onclick = () => { pv.zoom = Math.min(40, Math.round(pv.zoom * 1.4) + 1); drawPattern(); };
-$('zoom-out').onclick = () => { pv.zoom = Math.max(2, Math.round(pv.zoom / 1.4)); drawPattern(); };
+$('zoom-in').onclick = () => { pv.autoZoom = false; pv.zoom = Math.min(40, Math.round(pv.zoom * 1.4) + 1); drawPattern(); };
+$('zoom-out').onclick = () => { pv.autoZoom = false; pv.zoom = Math.max(2, Math.round(pv.zoom / 1.4)); drawPattern(); };
 $('rematch-btn').onclick = rematch;
 const canvas = $('pattern');
 canvas.addEventListener('pointerdown', onPointerDown);
@@ -1001,7 +1011,12 @@ $('export-btn').onclick = exportBackup;
 $('import-btn').onclick = () => $('import-file').click();
 $('import-file').onchange = (e) => { if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; $('menu').close(); };
 
-window.addEventListener('resize', () => { if (current?.pattern && !$('project-view').hidden && pv.zoom === 0) drawPattern(); });
+// 아이패드를 돌리거나 창 크기가 바뀌면 (직접 확대하지 않았을 때) 도안을 다시 맞춘다
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (current?.pattern && !$('project-view').hidden && pv.autoZoom) drawPattern(); }, 150);
+});
 
 // 홈 화면 앱에서 저장 공간이 지워지지 않도록 요청
 navigator.storage?.persist?.();
