@@ -4,6 +4,9 @@ const STASH_KEY = 'stitch.stash.v1';
 const byCode = Object.fromEntries(DMC.map(([code, name, hex]) => [code, { code, name, hex }]));
 const $ = (id) => document.getElementById(id);
 const EMPTY = 255;                 // 도안에서 수놓지 않는 칸
+const BG_CODE = 'Ecru';            // 도안 배경에 항상 쓰는 실
+const BG_COLOR = parseInt(DMC.find((t) => t[0] === BG_CODE)[2], 16);
+const BG_MARGIN = 3;               // 그림 둘레에 두르는 배경 칸 수
 const MAX_SIDE = 300;              // 도안 한 변 최대 칸 수
 const OWNED_OK = 10;               // 보유 실 우선일 때 이 정도 색 차이(ΔE)까지는 보유 실을 쓴다
 const SYMBOLS = '●▲■◆○△□◇ABCDEFGHJKLMNPQRSTUVWXYZ23456789abdefghkmnpqrtuy+=×÷%#@&?!$/<>~^*'.split('');
@@ -162,6 +165,9 @@ function skeinsFor(stitches, fabric) {
 }
 
 /** 보유 실 / 전체 실 중 추천 실을 고른다 */
+function threadsFor(palette, bg, mode) {
+  return palette.map((hex, i) => (i === bg ? BG_CODE : recommend(hex, mode)));
+}
 function recommend(hex, mode) {
   const best = nearestThread(hex);
   const ownedCodes = new Set(Object.keys(stash).filter(owned));
@@ -482,8 +488,11 @@ function drawPattern() {
   if (pv.autoZoom) pv.zoom = fitZoom();
   const cs = pv.zoom;
   // 캔버스가 너무 크면 Safari가 그리지 못하므로 해상도를 줄인다
-  const dpr = Math.min(window.devicePixelRatio || 1, Math.sqrt(16e6 / (w * h * cs * cs)));
+  const limit = Math.min(window.devicePixelRatio || 1, Math.sqrt(16e6 / (w * h * cs * cs)));
+  // 정수 배율일 때 칸 경계가 또렷하다
+  const dpr = limit >= 1 ? Math.floor(limit) : limit;
   const canvas = $('pattern');
+  canvas.style.imageRendering = dpr < 1 ? 'pixelated' : 'auto';
   canvas.width = Math.floor(w * cs * dpr);
   canvas.height = Math.floor(h * cs * dpr);
   canvas.style.width = w * cs + 'px';
@@ -506,7 +515,19 @@ function drawCell(ctx, i, cs) {
   if (k === EMPTY) return;
   const hex = threadHex(p.threads[k]);
   const dim = pv.highlight != null && pv.highlight !== k;
-  if (isDone(p, i)) {
+  if (pv.mode === 'view') {
+    // 보기: 실 색 그대로 또렷하게. 아직 수놓지 않은 칸에만 기호를 얹는다
+    ctx.globalAlpha = dim ? 0.15 : 1;
+    ctx.fillStyle = '#' + hex;
+    ctx.fillRect(x, y, cs, cs);
+    if (cs >= 11 && !dim && !isDone(p, i)) {
+      ctx.fillStyle = inkFor(hex);
+      ctx.font = `${Math.floor(cs * 0.62)}px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(SYMBOLS[k % SYMBOLS.length], x + cs / 2, y + cs / 2 + 0.5);
+    }
+  } else if (isDone(p, i)) {
     ctx.globalAlpha = dim ? 0.15 : 1;
     ctx.fillStyle = '#' + hex;
     ctx.fillRect(x, y, cs, cs);
@@ -548,7 +569,7 @@ function setMode(mode) {
   $('mode-stitch').classList.toggle('on', mode === 'stitch');
   $('pattern').classList.toggle('painting', mode === 'stitch');
   $('mode-hint').textContent = mode === 'stitch'
-    ? '칸을 누르거나 손가락으로 문지르면 완료 표시돼요. 완료된 칸을 누르면 취소돼요.'
+    ? '연한 칸은 아직, 진한 칸은 완료예요. 칸을 누르거나 문지르면 완료 표시되고, 완료된 칸을 누르면 취소돼요.'
     : '칸을 누르면 같은 색만 강조해서 보여줘요. 두 손가락으로 화면을 움직일 수 있어요.';
 }
 
@@ -628,7 +649,7 @@ function changeThread(i) {
 function rematch() {
   const p = current;
   if (!confirm('지금 보유 실을 기준으로 실을 다시 고를까요? 직접 바꾼 실도 다시 정해져요.')) return;
-  p.threads = p.pattern.palette.map((hex) => recommend(hex, p.matchMode || 'owned'));
+  p.threads = threadsFor(p.pattern.palette, p.pattern.bg, p.matchMode || 'owned');
   persist();
   renderProject();
   render();
@@ -656,16 +677,19 @@ async function onImagePicked(file) {
     const ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(bmp, 0, 0);
     const data = ctx.getImageData(0, 0, W, H).data;
-    const cell = detectCell(data, W, H);
-    let cols = Math.round(W / cell);
-    pending = { data, W, H, cell };
-    if (cols > MAX_SIDE || (cell === 1 && W > 200)) {
+    const grid = findGrid(data, W, H);
+    let cols = grid.cols;
+    pending = { data, W, H, smoothed: grid.smoothed, grid: grid.grid };
+    if (!cols) {
       cols = Math.min(100, W);
       toast('픽셀 칸을 자동으로 찾지 못했어요. 가로 칸 수를 확인해 주세요.');
     }
     pending.autoCols = cols;
     if (!$('new-title').value.trim()) $('new-title').value = file.name.replace(/\.[^.]+$/, '');
     $('cols-input').value = cols;
+    // 가장자리가 대부분 한 색이면 여백으로 보고 처음부터 지운다
+    const { border } = sampleGrid(pending, cols);
+    $('trim-bg').checked = border.ratio >= 0.6;
     $('new-choice').hidden = true;
     $('import-setup').hidden = false;
     buildPending();
@@ -697,30 +721,315 @@ function detectCell(d, W, H) {
   return g || 1;
 }
 
-/** 이미지를 cols×rows 칸으로 나눠 각 칸 가운데 색을 읽는다 */
-function sampleGrid({ data, W, H }, cols) {
-  const size = W / cols;
-  const rows = Math.max(1, Math.round(H / size));
-  const colors = new Array(cols * rows);
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const sx = Math.min(W - 1, Math.floor((x + 0.5) * size));
-      const sy = Math.min(H - 1, Math.floor((y + 0.5) * (H / rows)));
-      const i = (sy * W + sx) * 4;
-      colors[y * cols + x] = data[i + 3] < 128 ? -1 : (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+/**
+ * 이미지의 가로 칸 수를 찾는다.
+ * 1) 칸 크기가 정수이고 가장자리부터 시작하면 그 크기, 2) 경계가 또렷하면 반복 간격과 시작 위치(여백·소수 크기 가능),
+ * 3) 부드럽게 확대했으면 다시 그려 본 오차, 4) 색이 적으면 1칸=1픽셀로 본다. 못 찾으면 cols는 null이다.
+ */
+function findGrid(d, W, H) {
+  const cell = detectCell(d, W, H);
+  if (cell > 1) return { cols: Math.round(W / cell), smoothed: false };
+  const grid = detectOffsetGrid(d, W, H);
+  if (grid) return { cols: grid.cols, smoothed: true, grid };
+  const cols = detectBlurredGrid(d, W, H);
+  if (cols) return { cols, smoothed: true };
+  const colors = new Set();
+  for (let i = 0; i < d.length && colors.size <= 64; i += 4) if (d[i + 3] >= 128) colors.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+  if (colors.size <= 64 && W <= MAX_SIDE) return { cols: W, smoothed: false };
+  return { cols: null, smoothed: true };
+}
+
+/** 경계 위치마다 뚜렷한 색 변화가 몇 번 있었는지 센다 (axis 0: 세로 경계, 1: 가로 경계) */
+function edgeProfile(d, W, H, axis) {
+  const len = axis === 0 ? W : H, other = axis === 0 ? H : W;
+  const step = Math.max(1, Math.floor(other / 400));
+  const profile = new Float64Array(len - 1);
+  for (let o = 0; o < other; o += step) {
+    for (let k = 0; k < len - 1; k++) {
+      const a = (axis === 0 ? o * W + k : k * W + o) * 4;
+      const b = (axis === 0 ? o * W + k + 1 : (k + 1) * W + o) * 4;
+      let g = 0;
+      for (let c = 0; c < 3; c++) g += Math.abs(onWhite(d, a, c) - onWhite(d, b, c));
+      if (g > 90) profile[k]++;
     }
   }
+  const pos = [], weight = [];
+  profile.forEach((v, k) => { if (v) { pos.push(k + 1); weight.push(v); } });
+  return { pos, weight, total: weight.reduce((s, v) => s + v, 0) };
+}
+
+/** 경계들이 주기 1/f로 얼마나 규칙적인지(0~1)와 시작 위치 */
+function periodicity({ pos, weight, total }, f) {
+  let re = 0, im = 0;
+  const w = 2 * Math.PI * f;
+  for (let i = 0; i < pos.length; i++) { re += weight[i] * Math.cos(w * pos[i]); im += weight[i] * Math.sin(w * pos[i]); }
+  return { strength: Math.hypot(re, im) / total, phase: Math.atan2(im, re) };
+}
+
+/** 칸 크기가 정수가 아니거나(예: 11.3픽셀) 여백 때문에 칸이 가장자리에서 시작하지 않는 이미지의 격자를 찾는다 */
+function detectOffsetGrid(d, W, H) {
+  const px = edgeProfile(d, W, H, 0), py = edgeProfile(d, W, H, 1);
+  if (px.pos.length < 4 || py.pos.length < 4) return null;
+  const side = Math.max(W, H), df = 0.2 / side;
+  const scan = [];
+  const maxF = Math.min(0.4, (MAX_SIDE + 40) / Math.min(W, H)); // 칸 수 제한보다 작은 칸은 볼 필요가 없다
+  for (let f = 6 / Math.min(W, H); f <= maxF; f += df) {
+    scan.push([f, Math.sqrt(periodicity(px, f).strength * periodicity(py, f).strength)]);
+  }
+  let best = 0;
+  for (const [, s] of scan) if (s > best) best = s;
+  if (best < 0.3) return null;
+  const refine = (profile, f0) => {
+    let top = { strength: -1 };
+    for (let f = f0 * 0.985; f <= f0 * 1.015; f += df / 4) {
+      const r = periodicity(profile, f);
+      if (r.strength > top.strength) top = { ...r, f };
+    }
+    const size = 1 / top.f;
+    let start = ((top.phase / (2 * Math.PI)) * size) % size;
+    if (start < 0) start += size;
+    if (start > size * 0.7) start -= size; // 첫 칸이 거의 다 들어와 있으면 그 칸부터 센다
+    return { size, start };
+  };
+  // 칸의 절반 크기도 똑같이 규칙적으로 보이므로, 경계가 칸선 위에 있는 후보 중 가장 큰 칸을 고른다
+  let tried = 0;
+  for (let i = 1; i < scan.length - 1 && tried < 12; i++) {
+    const [f, s] = scan[i];
+    if (s < best * 0.5 || s < scan[i - 1][1] || s < scan[i + 1][1]) continue;
+    tried++;
+    const gx = refine(px, f), gy = refine(py, f);
+    if (gx.size < 4 || gy.size < 4) continue;
+    if (edgesOnLines(px, gx) < 0.85 || edgesOnLines(py, gy) < 0.85) continue;
+    const cols = Math.floor((W - gx.start) / gx.size + 0.3), rows = Math.floor((H - gy.start) / gy.size + 0.3);
+    if (cols < 4 || rows < 1 || cols > MAX_SIDE + 40 || rows > MAX_SIDE + 40) continue;
+    return { cols, rows, sizeX: gx.size, sizeY: gy.size, startX: gx.start, startY: gy.start };
+  }
+  return null;
+}
+
+/** 경계 중 칸선 가까이에 있는 비율 */
+function edgesOnLines({ pos, weight, total }, { size, start }) {
+  const tol = size * 0.12 + 0.75;
+  let hit = 0;
+  for (let i = 0; i < pos.length; i++) {
+    const r = (((pos[i] - start) % size) + size) % size;
+    if (Math.min(r, size - r) <= tol) hit += weight[i];
+  }
+  return hit / total;
+}
+
+/** 색이 변하는 지점(칸 경계 부근)의 픽셀을 최대 8000개 고른다. 번호 x, y를 번갈아 담는다 */
+function edgeSamples(d, W, H) {
+  const pts = [];
+  const step = Math.max(1, Math.floor(Math.sqrt((W * H) / 1500000)));
+  for (let y = 0; y < H - 1; y += step) {
+    for (let x = 0; x < W - 1; x += step) {
+      const i = (y * W + x) * 4, r = i + 4, b = i + W * 4;
+      let g = 0;
+      for (let c = 0; c < 3; c++) g += Math.abs(onWhite(d, i, c) - onWhite(d, r, c)) + Math.abs(onWhite(d, i, c) - onWhite(d, b, c));
+      if (g > 24) pts.push(x, y);
+    }
+  }
+  const count = pts.length / 2, keep = Math.max(1, Math.floor(count / 8000));
+  const out = [];
+  for (let k = 0; k < count; k += keep) out.push(pts[2 * k], pts[2 * k + 1]);
+  return out;
+}
+/** 투명한 칸은 흰색 위에 있다고 보고 색을 읽는다 */
+const onWhite = (d, i, c) => { const a = d[i + 3] / 255; return d[i + c] * a + 255 * (1 - a); };
+
+/** 가로 n칸이라고 가정하고 칸 가운데 색만으로 이미지를 다시 그렸을 때의 오차 (계단식/부드러운 확대 중 작은 쪽) */
+function gridError(d, W, H, n, pts) {
+  const p = W / n, rows = Math.round(H / p), py = H / rows;
+  const g = new Float32Array(n * rows * 3);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < n; x++) {
+      const i = (Math.min(H - 1, Math.floor((y + 0.5) * py)) * W + Math.min(W - 1, Math.floor((x + 0.5) * p))) * 4;
+      for (let c = 0; c < 3; c++) g[(y * n + x) * 3 + c] = onWhite(d, i, c);
+    }
+  }
+  let sharp = 0, soft = 0;
+  for (let k = 0; k < pts.length; k += 2) {
+    const x = pts[k], y = pts[k + 1], i = (y * W + x) * 4;
+    const fx = (x + 0.5) / p - 0.5, fy = (y + 0.5) / py - 0.5;
+    const x0 = Math.max(0, Math.floor(fx)), y0 = Math.max(0, Math.floor(fy));
+    const x1 = Math.min(n - 1, x0 + 1), y1 = Math.min(rows - 1, y0 + 1);
+    const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+    const nx = Math.min(n - 1, Math.floor((x + 0.5) / p)), ny = Math.min(rows - 1, Math.floor((y + 0.5) / py));
+    for (let c = 0; c < 3; c++) {
+      const v = onWhite(d, i, c);
+      sharp += Math.abs(v - g[(ny * n + nx) * 3 + c]);
+      const top = g[(y0 * n + x0) * 3 + c] * (1 - tx) + g[(y0 * n + x1) * 3 + c] * tx;
+      const bottom = g[(y1 * n + x0) * 3 + c] * (1 - tx) + g[(y1 * n + x1) * 3 + c] * tx;
+      soft += Math.abs(v - (top * (1 - ty) + bottom * ty));
+    }
+  }
+  return Math.min(sharp, soft) / ((pts.length / 2) * 3);
+}
+
+/** 진짜 칸 수에서는 오차가 양옆 칸 수보다 뚝 떨어진다. 그런 칸 수 중 가장 작은 값을 고른다 */
+function detectBlurredGrid(d, W, H) {
+  const pts = edgeSamples(d, W, H);
+  if (pts.length < 60) return null;
+  const maxCols = Math.min(MAX_SIDE, Math.floor(W / 2.5));
+  const valid = (n) => { const rows = Math.round(H / (W / n)); return n >= 3 && rows >= 1 && rows <= MAX_SIDE; };
+  const errors = new Map();
+  const err = (n) => {
+    if (!errors.has(n)) errors.set(n, valid(n) ? gridError(d, W, H, n, pts) : Infinity);
+    return errors.get(n);
+  };
+  for (let n = 4; n <= maxCols; n++) {
+    if (!valid(n)) continue;
+    const e = err(n);
+    if (e > 12) continue;
+    const sides = Math.min(err(n - 1), err(n + 1));
+    if (sides !== Infinity && e < sides * 0.7) return n;
+  }
+  return null;
+}
+
+/** 경계가 번진 이미지에서 생긴 거의 같은 색들을 많이 쓰인 색 하나로 합친다 */
+function mergeNearColors(colors) {
+  const freq = new Map();
+  for (const v of colors) if (v >= 0) freq.set(v, (freq.get(v) || 0) + 1);
+  if (freq.size > 5000) return colors;
+  const toLab = (v) => rgbToLab([v >> 16 & 255, v >> 8 & 255, v & 255]);
+  const reps = [];
+  const map = new Map();
+  for (const [v] of [...freq].sort((a, b) => b[1] - a[1])) {
+    const lab = toLab(v);
+    const near = reps.find((r) => deltaE2000(lab, r.lab) < 5);
+    if (near) { map.set(v, near.v); near.count += freq.get(v); }
+    else { reps.push({ v, lab, count: freq.get(v) }); map.set(v, v); }
+  }
+  // 몇 칸 안 되는 색이 더 많이 쓰인 색과 꽤 비슷하면 번지면서 생긴 색으로 보고 합친다 (눈동자처럼 뚜렷이 다른 색은 남는다)
+  const total = reps.reduce((s, r) => s + r.count, 0);
+  const rare = Math.max(3, total * 0.005);
+  for (const r of [...reps].reverse()) {
+    if (r.count > rare) continue;
+    let best = null, bestD = 12;
+    for (const o of reps) {
+      if (o === r || o.count <= r.count) continue;
+      const dist = deltaE2000(r.lab, o.lab);
+      if (dist < bestD) { best = o; bestD = dist; }
+    }
+    if (best) { r.into = best; best.count += r.count; }
+  }
+  const finalColor = (v) => {
+    let r = reps.find((x) => x.v === map.get(v));
+    while (r.into) r = r.into;
+    return r.v;
+  };
+  const resolved = new Map([...freq.keys()].map((v) => [v, finalColor(v)]));
+  return colors.map((v) => (v < 0 ? v : resolved.get(v)));
+}
+
+/** 칸 가운데 부분의 색. 경계가 번지거나 압축된 이미지는 가운데 몇 픽셀의 중간값을 쓴다 */
+function cellColor(data, W, H, cx, cy, radius) {
+  const center = (Math.max(0, Math.min(H - 1, Math.floor(cy))) * W + Math.max(0, Math.min(W - 1, Math.floor(cx)))) * 4;
+  if (data[center + 3] < 128) return -1;
+  if (!radius) return (data[center] << 16) | (data[center + 1] << 8) | data[center + 2];
+  const ch = [[], [], []];
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const i = (Math.max(0, Math.min(H - 1, Math.floor(cy) + dy)) * W + Math.max(0, Math.min(W - 1, Math.floor(cx) + dx))) * 4;
+      for (let c = 0; c < 3; c++) ch[c].push(data[i + c]);
+    }
+  }
+  const mid = (a) => a.sort((x, y) => x - y)[a.length >> 1];
+  return (mid(ch[0]) << 16) | (mid(ch[1]) << 8) | mid(ch[2]);
+}
+
+/** 가장자리에 가장 많은 색 (-1은 투명) */
+function borderColor(colors, w, h) {
+  const freq = new Map();
+  let total = 0;
+  const add = (v) => { total++; freq.set(v, (freq.get(v) || 0) + 1); };
+  for (let x = 0; x < w; x++) { add(colors[x]); add(colors[(h - 1) * w + x]); }
+  for (let y = 1; y < h - 1; y++) { add(colors[y * w]); add(colors[y * w + w - 1]); }
+  let top = -1, count = 0;
+  for (const [v, n] of freq) if (n > count) { top = v; count = n; }
+  return { color: top, ratio: total ? count / total : 0 };
+}
+
+/** 가장자리와 이어진 배경 칸을 비우고, 그림만 남도록 잘라낸다. 그림 안쪽의 같은 색(눈 흰자 등)은 남는다 */
+function trimBackground(colors, w, h, bg) {
+  const out = colors.slice();
+  const stack = [];
+  const push = (i) => { if (out[i] === bg || out[i] === -1) { out[i] = -2; stack.push(i); } };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+  while (stack.length) {
+    const i = stack.pop(), x = i % w;
+    if (x > 0) push(i - 1);
+    if (x < w - 1) push(i + 1);
+    if (i >= w) push(i - w);
+    if (i < w * (h - 1)) push(i + w);
+  }
+  let x0 = w, x1 = -1, y0 = h, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (out[y * w + x] === -2) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return { colors, w, h };
+  const nw = x1 - x0 + 1, nh = y1 - y0 + 1;
+  const cropped = new Array(nw * nh);
+  for (let y = 0; y < nh; y++) {
+    for (let x = 0; x < nw; x++) {
+      const v = out[(y + y0) * w + x + x0];
+      cropped[y * nw + x] = v === -2 ? -1 : v;
+    }
+  }
+  return { colors: cropped, w: nw, h: nh };
+}
+
+/** 비어 있는 칸을 배경색으로 채우고, 그림 둘레에 배경 칸을 두른다 */
+function addBackground(colors, w, h) {
+  const nw = w + BG_MARGIN * 2, nh = h + BG_MARGIN * 2;
+  const out = new Array(nw * nh).fill(BG_COLOR);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const v = colors[y * w + x];
+      if (v >= 0) out[(y + BG_MARGIN) * nw + x + BG_MARGIN] = v;
+    }
+  }
+  return { colors: out, w: nw, h: nh };
+}
+
+/** 이미지를 칸으로 나눠 각 칸 가운데 색을 읽는다. 찾아 둔 격자가 있으면 그 위치를 그대로 쓴다 */
+function sampleGrid({ data, W, H, smoothed, grid, trim }, requested) {
+  const useGrid = grid && grid.cols === requested;
+  let cols = requested;
+  let rows = useGrid ? grid.rows : Math.max(1, Math.round(H / (W / requested)));
+  const sizeX = useGrid ? grid.sizeX : W / cols, sizeY = useGrid ? grid.sizeY : H / rows;
+  const startX = useGrid ? grid.startX : 0, startY = useGrid ? grid.startY : 0;
+  const radius = smoothed ? Math.min(3, Math.floor(Math.min(sizeX, sizeY) * 0.2)) : 0;
+  let colors = new Array(cols * rows);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      colors[y * cols + x] = cellColor(data, W, H, startX + (x + 0.5) * sizeX, startY + (y + 0.5) * sizeY, radius);
+    }
+  }
+  if (smoothed) colors = mergeNearColors(colors);
+  const border = borderColor(colors, cols, rows);
+  if (trim) ({ colors, w: cols, h: rows } = trimBackground(colors, cols, rows, border.color));
+  ({ colors, w: cols, h: rows } = addBackground(colors, cols, rows));
   // 색이 너무 많으면(사진 등) 비슷한 색끼리 묶는다
   let step = 1, palette;
   for (;;) {
-    const q = (v) => (v < 0 ? -1 : step === 1 ? v : (((v >> 16 & 255) / step | 0) * step << 16) | (((v >> 8 & 255) / step | 0) * step << 8) | (((v & 255) / step | 0) * step));
+    const q = (v) => (v < 0 ? -1 : step === 1 || v === BG_COLOR ? v : (((v >> 16 & 255) / step | 0) * step << 16) | (((v >> 8 & 255) / step | 0) * step << 8) | (((v & 255) / step | 0) * step));
     palette = new Map();
     for (const v of colors) if (v >= 0) palette.set(q(v), true);
     if (palette.size <= 254) {
       const idx = new Map([...palette.keys()].map((v, i) => [v, i]));
       const cells = new Uint8Array(colors.length);
       colors.forEach((v, i) => (cells[i] = v < 0 ? EMPTY : idx.get(q(v))));
-      return { w: cols, h: rows, palette: [...palette.keys()].map((v) => rgbToHex([v >> 16 & 255, v >> 8 & 255, v & 255])), cells, reduced: step > 1 };
+      return { w: cols, h: rows, palette: [...palette.keys()].map((v) => rgbToHex([v >> 16 & 255, v >> 8 & 255, v & 255])), cells, reduced: step > 1, border, bg: idx.get(BG_COLOR) };
     }
     step = step === 1 ? 8 : step * 2;
   }
@@ -730,11 +1039,13 @@ function buildPending() {
   if (!pending) return;
   let cols = Math.round(Number($('cols-input').value));
   if (!(cols >= 4)) cols = 4;
-  cols = Math.min(cols, MAX_SIDE, pending.W);
+  cols = Math.min(cols, MAX_SIDE + 40, pending.W);
+  pending.trim = $('trim-bg').checked;
   const pat = sampleGrid(pending, cols);
-  if (pat.h > MAX_SIDE) { toast(`세로가 ${MAX_SIDE}칸을 넘어요. 가로 칸 수를 줄여 주세요.`); }
+  const tooBig = Math.max(pat.w, pat.h) > MAX_SIDE + BG_MARGIN * 2;
+  if (tooBig) toast(`그림이 ${MAX_SIDE}칸을 넘어요. 가로 칸 수를 줄여 주세요.`);
   const mode = $('match-mode').value;
-  pat.threads = pat.palette.map((hex) => recommend(hex, mode));
+  pat.threads = threadsFor(pat.palette, pat.bg, mode);
   pending.pattern = pat;
 
   // 미리보기: 추천 실 색으로
@@ -755,11 +1066,11 @@ function buildPending() {
   const fabric = Number($('fabric-input').value);
   const cm = (n) => ((n / fabric) * 2.54).toFixed(1);
   $('import-info').textContent =
-    `${pat.w}×${pat.h}칸 · ${fmt(stitches)}땀 · 이미지 색 ${pat.palette.length}개 → DMC 실 ${codes.size}가지` +
+    `${pat.w}×${pat.h}칸 (둘레 ${BG_CODE} ${BG_MARGIN}칸 포함) · ${fmt(stitches)}땀 · 이미지 색 ${pat.palette.length}개 → DMC 실 ${codes.size}가지` +
     (missing ? ` (그중 ${missing}가지는 장보기에 추가돼요)` : ' (모두 보유 실)') +
     ` · 완성 크기 약 ${cm(pat.w)}×${cm(pat.h)}cm` +
     (pat.reduced ? ' · 색이 많아 비슷한 색끼리 묶었어요' : '');
-  $('new-create').disabled = pat.h > MAX_SIDE || !stitches;
+  $('new-create').disabled = tooBig || !stitches;
 }
 
 function createFromPending() {
@@ -773,7 +1084,7 @@ function createFromPending() {
     createdAt: Date.now(),
     fabric: Number($('fabric-input').value),
     matchMode: $('match-mode').value,
-    pattern: { w: pat.w, h: pat.h, palette: pat.palette, cells: b64(pat.cells) },
+    pattern: { w: pat.w, h: pat.h, palette: pat.palette, cells: b64(pat.cells), bg: pat.bg },
     threads: pat.threads,
   };
   projects.push(p);
@@ -962,7 +1273,7 @@ $('stash-add').onclick = () => openPicker({
 
 $('back-btn').onclick = () => { current = null; switchTab('list-view'); };
 $('edit-btn').onclick = openEditor;
-$('mode-view').onclick = () => setMode('view');
+$('mode-view').onclick = () => { setMode('view'); drawPattern(); };
 $('mode-stitch').onclick = () => { pv.highlight = null; setMode('stitch'); renderLegend(); drawPattern(); };
 $('zoom-in').onclick = () => { pv.autoZoom = false; pv.zoom = Math.min(40, Math.round(pv.zoom * 1.4) + 1); drawPattern(); };
 $('zoom-out').onclick = () => { pv.autoZoom = false; pv.zoom = Math.max(2, Math.round(pv.zoom / 1.4)); drawPattern(); };
@@ -981,6 +1292,7 @@ $('manual-btn').onclick = createManual;
 $('cols-input').onchange = buildPending;
 $('cols-auto').onclick = () => { if (pending) { $('cols-input').value = pending.autoCols; buildPending(); } };
 $('match-mode').onchange = buildPending;
+$('trim-bg').onchange = buildPending;
 $('fabric-input').onchange = buildPending;
 $('new-create').onclick = createFromPending;
 
