@@ -1,0 +1,24 @@
+owlbear  100 x 180칸  23색
+DMC 890    Ultra Dark Pistachio Green       #174923   3771땀
+DMC 310    Black                            #000000   2458땀
+DMC 823    Dark Navy Blue                   #213063   2091땀
+DMC 433    Medium Brown                     #7A451F   1816땀
+DMC 437    Light Tan                        #E4BB8E   1454땀
+DMC 801    Dark Coffee Brown                #653919   1341땀
+DMC 796    Dark Royal Blue                  #11416E   1086땀
+DMC 798    Dark Delft Blue                  #466A8E    557땀
+DMC 743    Medium Yellow                    #FED376    555땀
+DMC 986    Very Dark Forest Green           #405230    547땀
+DMC 783    Medium Topaz                     #CE9124    544땀
+DMC 780    Ultra Very Dark Topaz            #94631A    540땀
+DMC 740    Tangerine                        #FF8B00    428땀
+DMC 435    Very Light Brown                 #B87748    260땀
+DMC 444    Dark Lemon                       #FFD600    184땀
+DMC 500    Very Dark Blue Green             #044D33     98땀
+DMC 972    Deep Canary                      #FFB515     91땀
+DMC 3078   Very Light Golden Yellow         #FDF9CD     79땀
+DMC 739    Ultra Very Light Tan             #F8E4C8     48땀
+DMC 921    Copper                           #C66245     35땀
+DMC 988    Medium Forest Green              #738B5B     11땀
+DMC 809    Delft Blue                       #94A8C6      4땀
+DMC B5200  Snow White                       #FFFFFF      2땀

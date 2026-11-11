@@ -1,0 +1,17 @@
+gelatinous_cube  100 x 180칸  16색
+DMC 3799   Very Dark Pewter Gray            #424242   4391땀
+DMC 317    Pewter Gray                      #6C6C6C   4093땀
+DMC 310    Black                            #000000   2658땀
+DMC 704    Bright Chartreuse                #9ECF34   2582땀
+DMC 907    Light Parrot Green               #C7E666   1203땀
+DMC 702    Kelly Green                      #479B39   1180땀
+DMC 700    Bright Green                     #07731B   1098땀
+DMC B5200  Snow White                       #FFFFFF    177땀
+DMC 414    Dark Steel Gray                  #8C8C8C    136땀
+DMC 772    Very Light Yellow Green          #E4ECD4    119땀
+DMC 740    Tangerine                        #FF8B00    108땀
+DMC 801    Dark Coffee Brown                #653919     90땀
+DMC 444    Dark Lemon                       #FFD600     90땀
+DMC 415    Pearl Gray                       #D3D3D6     57땀
+DMC 783    Medium Topaz                     #CE9124     14땀
+DMC 972    Deep Canary                      #FFB515      4땀
